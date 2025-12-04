@@ -1,0 +1,10 @@
+node_modules/
+bot_profile/
+
+*.log
+.DS_Store
+final_poster.jpg
+debug_scrape_fail.png
+page_dump.html
+4K Stogram/
+stogram_data/

@@ -1,0 +1,23 @@
+{
+  "name": "rcns",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "canvas": "^3.2.0",
+    "dotenv": "^17.2.3",
+    "playwright": "^1.57.0",
+    "puppeteer": "^24.32.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "twitter-api-v2": "^1.28.0"
+  }
+}
