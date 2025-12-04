@@ -12,7 +12,7 @@ async function postTextTweet() {
     console.log("--- Posting Test Text Tweet to Twitter (API) ---");
 
     try {
-        const tweetText = `Test tweet from API at ${new Date().toISOString()}`;
+        const tweetText = ':hello';
 
         // Post Tweet (v2)
         // v2 is generally preferred for simple text tweets if the app has v2 access
