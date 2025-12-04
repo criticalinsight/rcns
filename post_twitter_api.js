@@ -8,6 +8,8 @@ const client = new TwitterApi({
     appSecret: process.env.TWITTER_APP_SECRET,
     accessToken: process.env.TWITTER_ACCESS_TOKEN,
     accessSecret: process.env.TWITTER_ACCESS_SECRET,
+    clientId: process.env.TWITTER_CLIENT_ID,
+    clientSecret: process.env.TWITTER_CLIENT_SECRET,
 });
 
 const BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN;
@@ -27,7 +29,7 @@ async function postTweetAPI(details) {
             return;
         }
 
-        // Upload Media
+        // Upload Media (v1.1 is still the standard for media upload in this lib)
         console.log("Uploading media...");
         const mediaId = await client.v1.uploadMedia(POSTER_PATH);
         console.log(`Media uploaded. ID: ${mediaId}`);
@@ -35,13 +37,13 @@ async function postTweetAPI(details) {
         // Compose Text
         const tweetText = `📅 Upcoming Event: ${details.topic}\n🗣️ Speaker: ${details.speaker}\n📍 ${details.venue}\n⏰ ${details.date} at ${details.time}\n\n#Rotary #ServiceAboveSelf`;
 
-        // Post Tweet (v1.1)
-        console.log("Posting tweet (v1.1)...");
-        const tweet = await client.v1.tweet(tweetText, { media_ids: mediaId });
+        // Post Tweet (v2)
+        console.log("Posting tweet (v2)...");
+        const tweet = await client.v2.tweet(tweetText, { media: { media_ids: [mediaId] } });
 
         console.log("Tweet posted successfully!");
-        console.log("ID:", tweet.id_str);
-        console.log("Text:", tweet.text);
+        console.log("ID:", tweet.data.id);
+        console.log("Text:", tweet.data.text);
 
     } catch (e) {
         console.error("Twitter API Error Message:", e.message);
