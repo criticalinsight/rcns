@@ -1,23 +1,27 @@
 {
   "name": "rcns",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Rotary Club Notification System (Cloudflare Edition)",
+  "main": "src/worker.ts",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "canvas": "^3.2.0",
-    "dotenv": "^17.2.3",
-    "playwright": "^1.57.0",
-    "puppeteer": "^24.32.0",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "crypto-js": "^4.2.0",
+    "oauth-1.0a": "^2.2.6",
+    "telegram": "^2.26.22",
     "twitter-api-v2": "^1.28.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240925.0",
+    "@types/node": "^20.11.24",
+    "typescript": "^5.3.3",
+    "vitest": "^1.4.0",
+    "wrangler": "^4.61.0"
   }
 }

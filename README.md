@@ -1,38 +1,60 @@
-# RCNS Twitter Bot
+# RCNS (Rotary Club Notification System)
 
-This project automates posting updates to the Rotary Club of Nairobi South (@rotarynairobis) Twitter account.
+RCNS is a production-grade **Cloudflare Worker** designed to automate event notifications for the Rotary Club of Nairobi South (@rotarynairobis). It streamlines the transition from event flyer ingestion to social media publication using AI and serverless edge computing.
 
-## Features
-- **Twitter API Integration**: Uses `twitter-api-v2` to post tweets and upload media.
-- **GitHub Actions**: Automated workflows to test connections and post tweets.
-- **Puppeteer Fallback**: Includes Puppeteer scripts for browser-based automation if needed.
+## 🚀 Key Features
 
-## Setup
+-   **Cloudflare Workers & Durable Objects**: A serverless backbone that provides 24/7 reliability and persistence via SQLite (D1 on DO).
+-   **Gemini AI Integration**: Uses `gemini-2.5-flash` for:
+    -   **Vision**: Extracting event details (Date, Venue, Speaker) from images/flyers.
+    -   **Text Analysis**: Summarizing and structuring event information.
+    -   **Tweet Generation**: Crafting professional, brand-aligned tweets in the `@rotarynairobis` style (No hashtags/emojis).
+-   **Telegram Polling**: Periodically polls a dedicated Telegram channel for new event forwards using **GramJS**.
+-   **Automated Workflow**: Fully automated cycle from Telegram Ingestion → AI Analysis → Twitter Publication.
 
-1.  **Environment Variables**:
-    Copy `.env.example` to `.env` and fill in your Twitter API credentials:
-    ```
-    TWITTER_APP_KEY=...
-    TWITTER_APP_SECRET=...
-    TWITTER_ACCESS_TOKEN=...
-    TWITTER_ACCESS_SECRET=...
-    TWITTER_BEARER_TOKEN=...
-    ```
+## 🛠 Architecture
 
-2.  **Install Dependencies**:
-    ```bash
-    npm install
-    ```
+For a deep dive into the system design, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Usage
+## ⚙️ Configuration
 
-### Run Locally
-To post a test tweet:
+Set the following secrets in your Cloudflare environmental variables (or `.dev.vars` for local development):
+
+### Telegram MTProto
+-   `TELEGRAM_API_ID`: Your Telegram API ID.
+-   `TELEGRAM_API_HASH`: Your Telegram API Hash.
+-   `TELEGRAM_SESSION`: MTProto session string (generated via `scripts/generate_session.js`).
+-   `TELEGRAM_SOURCE_CHANNEL_ID`: High-level ID of the source channel (e.g., `-100...`).
+
+### Twitter (X) API v2
+-   `TWITTER_APP_KEY`
+-   `TWITTER_APP_SECRET`
+-   `TWITTER_ACCESS_TOKEN`
+-   `TWITTER_ACCESS_SECRET`
+
+### Google Gemini
+-   `GEMINI_API_KEY`: API key for Google AI Studio.
+
+## 📖 Development
+
+### Local Setup
 ```bash
-node post_text_tweet.js
+npm install
+# Generate a Telegram Session string if needed
+node scripts/generate_session.js
 ```
 
-### GitHub Actions
-Go to the **Actions** tab in the repository to run workflows manually:
-- **Test Twitter Connection**: Verifies authentication.
-- **Post Tweet**: Posts a configured text tweet (e.g., ":hello").
+### Deployment
+```bash
+# Push to Cloudflare Production
+npx wrangler deploy
+```
+
+### Monitoring
+```bash
+# Live logs from the Edge
+npx wrangler tail
+```
+
+## 📜 License
+Private/Proprietary for the Rotary Club of Nairobi South.

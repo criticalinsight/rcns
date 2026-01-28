@@ -1,0 +1,29 @@
+name = "rcns"
+main = "src/worker.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["*/5 * * * *"] # 5-minute heartbeat
+
+[observability]
+enabled = true
+
+[[durable_objects.bindings]]
+name = "RCNS_DO"
+class_name = "RCNS_DO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RCNS_DO"]
+
+[ai]
+binding = "AI"
+
+[vars]
+# TWITTER_APP_KEY = "..." (set via secret)
+# TELEGRAM_API_ID = "..." (set via secret)
+# TELEGRAM_API_HASH = "..." (set via secret)
+# TELEGRAM_BOT_TOKEN = "..." (set via secret)
+# GEMINI_API_KEY = "..." (set via secret)
+TELEGRAM_SOURCE_CHANNEL_ID = "-1003893041237"

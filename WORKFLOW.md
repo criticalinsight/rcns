@@ -1,53 +1,61 @@
-# Rotary Bot Automation Workflow
+# RCNS Automation Workflow
 
-## Objective
-Automate the process of finding new Rotary Club event posters on Instagram, analyzing them for details, creating a standardized Twitter card, and publishing it to X (Twitter).
+This document outlines the automated workflow for the Rotary Club Notification System (RCNS), running on Cloudflare Workers.
 
-## Core Components
-1.  **Browser Engine:** Chrome (running with persistent user profile `bot_profile`).
-2.  **Controller:** Rust (using `chromiumoxide` or `headless_chrome` to drive the browser).
-3.  **State Management:** Local JSON file (`state.json`) to track processed posts.
+## 1. Ingestion (Trigger)
+*   **Source**: Telegram Channel `-1003893041237`.
+*   **Mechanism**: `TelegramCollector` (GramJS) listens for `NewMessage` events.
+*   **Action**:
+    1.  User/Admin forwards a flyer or text message to the channel.
+    2.  Worker receives the event via `TelegramCollector.ts`.
+    3.  Message is passed to `RCNS_DO.handleIngest`.
 
-## Step-by-Step Workflow
+## 2. Analysis (Processing)
+*   **Service**: `GeminiService` (Google Gemini Pro).
+*   **Input**: Text content from the Telegram message.
+*   **Action**:
+    1.  `RCNS_DO` extracts text from the message.
+    2.  `GeminiService.analyzeText(text)` is called.
+    3.  **Prompt**: Analyzes text to extract:
+        *   `summary`: Brief event description.
+        *   `date`: Event date/time.
+        *   `location`: Venue.
+        *   `entities`: Key people/orgs.
+    4.  The JSON result is stored in `FactStore` (SQLite) alongside the raw message.
 
-### 1. Initialization
-*   Load `state.json` to see the last processed post URL.
-*   Launch Chrome with `--user-data-dir=./bot_profile` and `--remote-debugging-port=9222`.
-*   Connect to the browser via WebSocket (CDP).
+## 3. Storage (Persistence)
+*   **Component**: `FactStore` (SQLite).
+*   **Data**:
+    *   `id`: Message ID.
+    *   `raw_text`: Original message.
+    *   `processed_json`: Gemini analysis result.
+    *   `status`: Set to `pending`.
 
-### 2. Scrape Instagram (Source)
-*   **Navigate:** Go to `instagram.com/{target_username}/`.
-*   **Check:** Is there a new post? (Compare latest post URL with `state.json`).
-    *   *If no new post:* Exit.
-    *   *If new post:* Proceed.
-*   **Action:** Click the latest post.
-*   **Extract:**
-    *   Download the image (Poster).
-    *   Copy the caption text (Context).
+## 4. Publishing (Output)
+*   **Target**: Twitter / X.
+*   **Mechanism**: `TwitterPublisher` (OAuth 1.0a).
+*   **Action**:
+    *   Currently, publishing is triggered manually or via code logic (e.g., auto-publish if high confidence).
+    *   **Future**: Admin approval button in Telegram to trigger `twitter.postTweet`.
 
-### 3. Analyze with Gemini (Intelligence)
-*   **Navigate:** Go to `gemini.google.com`.
-*   **Action:** Upload the downloaded poster image.
-*   **Prompt:** Send a strict prompt:
-    > "Analyze this event poster. Extract the following fields into a JSON object: { clubName, speaker, topic, venue, date, time }. If a field is missing, use null."
-*   **Extract:** Wait for the response and parse the JSON block.
+## Diagram
 
-### 4. Generate Content (Processing)
-*   **Image Processing:**
-    *   Create a blank 1200x675 canvas (Twitter Card standard).
-    *   Resize the original poster to fit the left side (maintain aspect ratio).
-    *   Render the extracted text (Topic, Speaker, Date, Venue) on the right side using a clean font.
-    *   Save as `final_poster.jpg`.
-*   **Text Processing:**
-    *   Compose a tweet: "📅 Upcoming Event: {Topic}\n🗣️ Speaker: {Speaker}\n📍 {Venue}\n⏰ {Date} at {Time}\n#Rotary #ServiceAboveSelf"
+```mermaid
+sequenceDiagram
+    participant Admin
+    participant Telegram as Telegram Channel
+    participant Worker as Cloudflare Worker
+    participant Gemini as Google Gemini
+    participant Store as FactStore (SQLite)
+    participant Twitter
 
-### 5. Publish to Twitter (Destination)
-*   **Navigate:** Go to `x.com`.
-*   **Action:** Click "Post" / Compose.
-*   **Upload:** Attach `final_poster.jpg`.
-*   **Type:** Paste the composed tweet text.
-*   **Submit:** Click "Post".
-
-### 6. Finalize
-*   **Update State:** Write the new post URL to `state.json`.
-*   **Cleanup:** Close browser (or leave open for debugging).
+    Admin->>Telegram: Forward Event Flyer
+    Telegram->>Worker: NewMessage Event
+    Worker->>Gemini: Analyze Text
+    Gemini-->>Worker: JSON {date, venue, summary}
+    Worker->>Store: Save Post (Status: Pending)
+    
+    Note over Worker: Future: Request Approval
+    
+    Worker->>Twitter: Post Tweet (if approved)
+```
