@@ -198,21 +198,23 @@ export class RCNS_DO extends DurableObject<Env> {
 
     async handleScheduled() {
         const now = new Date();
-        const currentHour = now.getUTCHours();
+        // Nairobi is UTC+3
+        const nairobiHour = (now.getUTCHours() + 3) % 24;
         const lastReportDay = await this.ctx.storage.get<string>('lastReportDay');
-        const todayStr = now.toISOString().split('T')[0];
+        const nairobiDate = new Date(now.getTime() + (3 * 60 * 60 * 1000));
+        const todayStr = nairobiDate.toISOString().split('T')[0];
 
         // Trigger ingest audit (polling) every time handleScheduled is called
         await this.alarm();
 
-        // Trigger daily report at midnight UTC, once per day
-        if (currentHour === 0 && lastReportDay !== todayStr) {
-            console.log('[RCNS_DO] Midnight detected, generating daily report...');
+        // Trigger daily report at midnight Nairobi time (21:00 UTC), once per day
+        if (nairobiHour === 0 && lastReportDay !== todayStr) {
+            console.log(`[RCNS_DO] Nairobi Midnight detected (${todayStr}), generating daily report...`);
             try {
                 await this.generateDailyReport();
                 await this.ctx.storage.put('lastReportDay', todayStr);
             } catch (e) {
-                this.logger.error('RCNS_DO', 'Failed to generate daily midnight report', e);
+                this.logger.error('RCNS_DO', 'Failed to generate daily Nairobi report', e);
             }
         }
     }
