@@ -52,9 +52,18 @@ export class TelegramCollector {
         }, new NewMessage({ incoming: true }));
     }
 
-    async sendMessage(chatId: string, text: string) {
+    async sendMessage(chatId: string, text: string): Promise<any> {
         await this.connect();
-        await this.client.sendMessage(chatId, { message: text });
+        return await this.client.sendMessage(chatId, { message: text });
+    }
+
+    async pinMessage(chatId: string, messageId: number) {
+        await this.connect();
+        try {
+            await this.client.pinMessage(chatId, messageId, { notify: true });
+        } catch (e) {
+            console.error(`[TelegramCollector] Pinning failed for ${messageId} in ${chatId}:`, e);
+        }
     }
 
     async downloadMedia(message: any): Promise<Uint8Array | null> {

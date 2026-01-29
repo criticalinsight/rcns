@@ -14,7 +14,8 @@ export class GeminiService {
             const prompt = `
             Analyze the following text and return a JSON object with these keys:
             - summary: A short summary of the event (string)
-            - date: Standardized date string (string)
+            - date: Standardized ISO 8601 date string (e.g., "2024-05-20T18:30:00") (string)
+            - is_upcoming: Boolean indicating if the event date is in the future relative to today (${new Date().toISOString()}) (boolean)
             - location: Venue or location (string)
             - entities: Key people or organizations mentioned (array of strings)
 
@@ -37,7 +38,8 @@ export class GeminiService {
             const prompt = `
             Analyze the following event flyer/image and return a JSON object with these keys:
             - summary: A short summary of the event (string)
-            - date: Standardized date string (string)
+            - date: Standardized ISO 8601 date string (e.g., "2024-05-20T18:30:00") (string)
+            - is_upcoming: Boolean indicating if the event date is in the future relative to today (${new Date().toISOString()}) (boolean)
             - location: Venue or location (string)
             - entities: Key people or organizations mentioned (array of strings)
 

@@ -13,6 +13,6 @@ export default {
         const id = env.RCNS_DO.idFromName('default');
         const stub = env.RCNS_DO.get(id);
         // Trigger heartbeat
-        ctx.waitUntil(stub.fetch('http://internal/scheduled'));
+        ctx.waitUntil(stub.handleScheduled());
     }
 };

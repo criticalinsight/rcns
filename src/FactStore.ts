@@ -92,4 +92,28 @@ export class FactStore {
             Date.now()
         );
     }
+
+    async getDailyMetrics(since: number): Promise<{
+        ingested: number;
+        published: number;
+        errors: number;
+        tweets: string[];
+    }> {
+        const posts = this.storage.sql.exec(
+            'SELECT generated_tweet, status FROM posts WHERE created_at >= ?',
+            since
+        ).toArray() as any[];
+
+        const logs = this.storage.sql.exec(
+            'SELECT id FROM logs WHERE created_at >= ?',
+            since
+        ).toArray() as any[];
+
+        return {
+            ingested: posts.length,
+            published: posts.filter(p => p.status === 'published').length,
+            errors: logs.length,
+            tweets: posts.filter(p => p.generated_tweet).map(p => p.generated_tweet)
+        };
+    }
 }

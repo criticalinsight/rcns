@@ -6,29 +6,28 @@ The Rotary Club Notification System (RCNS) has been re-architected as a **Server
 
 ### 1. `RCNS_DO` (Durable Object)
 The singleton orchestrator that maintains state and coordinates the workflow.
-*   **Role**: Handles cron triggers, ingestion logic, and publishing queues.
+*   **Role**: Handles cron triggers, ingestion logic, and daily reporting.
 *   **State**: Persistent storage via SQLite (`FactStore`).
 
 ### 2. `FactStore` (SQLite)
 A robust SQL database running within the Durable Object.
-*   **Replaces**: `state.json`
 *   **Schema**:
     *   `posts`: Tracks event flyers, processing status, and deduplication hashes.
     *   `logs`: Structured error and activity logging.
+*   **Analytics Engine**: Provides helper methods for aggregating 24h performance metrics (ingested messages, published tweets, errors).
 
 ### 3. Collectors & Publishers
 Modular interfaces for external platforms.
-*   **`TelegramCollector`**: Uses **GramJS** to connect to Telegram MTProto. Since Workers are stateless, it uses a **Polling** mechanism triggered by the Durable Object Alarm (every 5 minutes) to fetch new messages from the source channel.
-*   **`TwitterPublisher`**: Uses OAuth 1.0a signatures to interact with the Twitter v2 API. It handles text-only tweets in the current phase.
-*   **`GeminiService`**: Integrates with Google Generative AI to provide Vision and Text analysis capabilities. It uses a structured prompt to enforce the Rotary brand style.
+*   **`TelegramCollector`** (GramJS): Connects to MTProto. Uses a Polling mechanism triggered by the DO Alarm to ingest messages and download media.
+*   **`TwitterPublisher`** (OAuth 1.0a): Posts structured tweets in the club's brand style.
+*   **`GeminiService`** (Vision/Text): Extracted precise metadata from flyers and generates professional copy.
 
 ## Workflow
 
-1.  **Ingest**: An event flyer is forwarded to the designated Telegram Channel.
-2.  **Detect**: `RCNS_DO` (via Telegram IO) receives the message.
-3.  **Analyze**: Gemini Vision extracts event details (Speaker, Date, Venue).
-4.  **Approve**: The system sends a summary back to Telegram for admin confirmation (Future Phase).
-5.  **Publish**: Validated events are posted to Twitter.
+1.  **Ingest**: Messages are fetched from Telegram via periodic polling.
+2.  **Analyze**: Gemini Vision extracts details (Speaker, Date, Venue, is_upcoming).
+3.  **Publish**: Upcoming events are automatically posted to Twitter.
+4.  **Report**: Every midnight UTC, the system generates a 24h performance summary, sends it to Telegram, and pins it.
 
 ## Development
 

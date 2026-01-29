@@ -1,6 +1,9 @@
 node_modules/
 bot_profile/
 .env
+.dev.vars
+.wrangler/
+dist/
 *.log
 .DS_Store
 final_poster.jpg
@@ -8,3 +11,5 @@ debug_scrape_fail.png
 page_dump.html
 4K Stogram/
 stogram_data/
+trigger_report.ts
+coverage/

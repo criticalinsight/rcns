@@ -4,11 +4,15 @@
   "description": "Rotary Club Notification System (Cloudflare Edition)",
   "main": "src/worker.ts",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  },
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "dev": "bun x wrangler dev",
+    "deploy": "bun x wrangler deploy",
+    "typecheck": "bun x tsc --noEmit",
+    "test": "bun x vitest run"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -19,7 +23,10 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240925.0",
+    "@types/crypto-js": "^4.2.2",
     "@types/node": "^20.11.24",
+    "@vitest/coverage-istanbul": "1.6.1",
+    "@vitest/coverage-v8": "1.6.1",
     "typescript": "^5.3.3",
     "vitest": "^1.4.0",
     "wrangler": "^4.61.0"

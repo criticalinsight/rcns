@@ -11,6 +11,10 @@ RCNS is a production-grade **Cloudflare Worker** designed to automate event noti
     -   **Tweet Generation**: Crafting professional, brand-aligned tweets in the `@rotarynairobis` style (No hashtags/emojis).
 -   **Telegram Polling**: Periodically polls a dedicated Telegram channel for new event forwards using **GramJS**.
 -   **Automated Workflow**: Fully automated cycle from Telegram Ingestion → AI Analysis → Twitter Publication.
+-   **Daily Analytics & Reporting**:
+    -   **Midnight Summaries**: Aggregates 24-hour performance data (ingests, posts, errors) at 00:00 UTC.
+    -   **Telegram Distribution**: Sends formatted reports to the source channel.
+    -   **Persistent Pinning**: Automatically pins daily reports for community visibility.
 
 ## 🛠 Architecture
 
@@ -39,21 +43,21 @@ Set the following secrets in your Cloudflare environmental variables (or `.dev.v
 
 ### Local Setup
 ```bash
-npm install
+bun install
 # Generate a Telegram Session string if needed
-node scripts/generate_session.js
+bun scripts/generate_session.js
 ```
 
 ### Deployment
 ```bash
 # Push to Cloudflare Production
-npx wrangler deploy
+bun run deploy
 ```
 
 ### Monitoring
 ```bash
 # Live logs from the Edge
-npx wrangler tail
+bun x wrangler tail
 ```
 
 ## 📜 License

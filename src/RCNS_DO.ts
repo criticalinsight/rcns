@@ -184,16 +184,81 @@ export class RCNS_DO extends DurableObject<Env> {
         }
 
         if (url.pathname === '/scheduled') {
-            await this.alarm();
+            await this.handleScheduled();
             return new Response('OK');
+        }
+
+        if (url.pathname === '/generate-report') {
+            await this.generateDailyReport();
+            return new Response('Report generated and pinned.');
         }
 
         return new Response('RCNS Durable Object Online');
     }
 
+    async handleScheduled() {
+        const now = new Date();
+        const currentHour = now.getUTCHours();
+        const lastReportDay = await this.ctx.storage.get<string>('lastReportDay');
+        const todayStr = now.toISOString().split('T')[0];
+
+        // Trigger ingest audit (polling) every time handleScheduled is called
+        await this.alarm();
+
+        // Trigger daily report at midnight UTC, once per day
+        if (currentHour === 0 && lastReportDay !== todayStr) {
+            console.log('[RCNS_DO] Midnight detected, generating daily report...');
+            try {
+                await this.generateDailyReport();
+                await this.ctx.storage.put('lastReportDay', todayStr);
+            } catch (e) {
+                this.logger.error('RCNS_DO', 'Failed to generate daily midnight report', e);
+            }
+        }
+    }
+
     async alarm() {
         console.log('[RCNS_DO] Alarm triggered, checking for new messages...');
         await this.checkNewMessages();
+    }
+
+    async generateDailyReport() {
+        const since = Date.now() - 24 * 60 * 60 * 1000;
+        const metrics = await this.store.getDailyMetrics(since);
+        const successRate = metrics.ingested > 0 ? ((metrics.published / metrics.ingested) * 100).toFixed(1) : '0.0';
+
+        let report = `📊 *RCNS Daily Analytics Report*\n`;
+        report += `📅 Date: ${new Date().toISOString().split('T')[0]}\n\n`;
+        report += `📈 *System Metrics (Last 24h):*\n`;
+        report += `- Messages Ingested: ${metrics.ingested}\n`;
+        report += `- Tweets Published: ${metrics.published}\n`;
+        report += `- System Errors: ${metrics.errors}\n`;
+        report += `- Success Rate: ${successRate}%\n\n`;
+
+        if (metrics.tweets.length > 0) {
+            report += `🐦 *Tweets Posted:*\n`;
+            metrics.tweets.forEach((tweet, i) => {
+                // Truncate if very long
+                const summary = tweet.length > 100 ? tweet.substring(0, 97) + '...' : tweet;
+                report += `${i + 1}. ${summary}\n`;
+            });
+        } else {
+            report += `📭 No tweets posted in the last 24h.`;
+        }
+
+        const targetId = this.env.TELEGRAM_SOURCE_CHANNEL_ID;
+        console.log(`[RCNS_DO] Sending daily report to ${targetId}`);
+
+        try {
+            const sentMsg = await this.telegram.sendMessage(targetId, report);
+            if (sentMsg && sentMsg.id) {
+                console.log(`[RCNS_DO] Report sent (ID: ${sentMsg.id}). Pinning...`);
+                await this.telegram.pinMessage(targetId, sentMsg.id);
+            }
+        } catch (e) {
+            this.logger.error('RCNS_DO', 'Failed to send/pin Telegram report', e);
+            throw e;
+        }
     }
 
     async checkNewMessages() {
@@ -227,6 +292,13 @@ export class RCNS_DO extends DurableObject<Env> {
     }
 
     async handleIngest(msg: any) {
+        const id = msg.id.toString();
+        const existing = await this.store.getPost(id);
+        if (existing) {
+            console.log(`[RCNS_DO] Post ${id} already exists, skipping.`);
+            return;
+        }
+
         console.log('Ingesting message:', msg.id);
 
         let analysis = null;
@@ -256,7 +328,7 @@ export class RCNS_DO extends DurableObject<Env> {
                 console.log('Analysis result:', analysis);
             }
         } catch (e) {
-            console.error('Failed to analyze message:', e);
+            this.logger.error('RCNS_DO', 'Failed to analyze message', e);
         }
 
         // 3. Generate Tweet from Analysis (if successful)
@@ -266,7 +338,7 @@ export class RCNS_DO extends DurableObject<Env> {
                 generatedTweet = await this.gemini.generateTweetFromAnalysis(analysis);
                 console.log('Generated Tweet:', generatedTweet);
             } catch (e) {
-                console.error('Failed to generate tweet:', e);
+                this.logger.error('RCNS_DO', 'Failed to generate tweet', e);
             }
         }
 
@@ -287,6 +359,14 @@ export class RCNS_DO extends DurableObject<Env> {
 
         // 4. Auto-Publish (if tweet generated)
         if (generatedTweet) {
+            if (analysis?.is_upcoming === false) {
+                console.log(`Skipping publication for past event: ${post.id}`);
+                post.status = 'posted'; // Mark as 'posted' to avoid retries, or add a 'skipped' status
+                post.published_at = Date.now();
+                await this.store.savePost(post);
+                return;
+            }
+
             try {
                 console.log(`Publishing tweet for post ${post.id}...`);
                 const twitterId = await this.twitter.publish(post, mediaBuffer);
@@ -296,9 +376,7 @@ export class RCNS_DO extends DurableObject<Env> {
                 await this.store.savePost(post);
                 console.log(`Successfully posted tweet! ID: ${twitterId}`);
             } catch (e: any) {
-                console.error('Failed to publish tweet:', e.message);
-                post.status = 'failed';
-                await this.store.savePost(post);
+                this.logger.error('RCNS_DO', 'Failed to publish tweet', e);
             }
         }
     }
