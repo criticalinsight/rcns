@@ -19,7 +19,11 @@ describe('RCNS_DO', () => {
             GEMINI_API_KEY: 'test-key',
             TELEGRAM_SOURCE_CHANNEL_ID: 'test-channel',
             TELEGRAM_API_ID: '123',
-            TELEGRAM_API_HASH: 'hash'
+            TELEGRAM_API_HASH: 'hash',
+            TWITTER_APP_KEY: 'key',
+            TWITTER_APP_SECRET: 'secret',
+            TWITTER_ACCESS_TOKEN: 'token',
+            TWITTER_ACCESS_SECRET: 'access-secret'
         };
         mockCtx = {
             storage: {

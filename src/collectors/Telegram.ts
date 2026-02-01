@@ -1,85 +1,76 @@
-import { TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
-import { NewMessage } from "telegram/events";
-// import { Helper } from "telegram/lib/Helpers";
-import { Env } from '../types';
-
 export class TelegramCollector {
-    private client: TelegramClient;
-    private session: StringSession;
+    private baseUrl: string;
 
     constructor(private env: Env, private onMessage: (msg: any) => Promise<void>) {
-        this.session = new StringSession(this.env.TELEGRAM_SESSION || "");
-        this.client = new TelegramClient(
-            this.session,
-            parseInt(this.env.TELEGRAM_API_ID),
-            this.env.TELEGRAM_API_HASH,
-            { connectionRetries: 5 }
-        );
+        this.baseUrl = `https://api.telegram.org/bot${this.env.TELEGRAM_BOT_TOKEN}`;
     }
 
-    async connect() {
-        if (!this.client.connected) {
-            await this.client.connect();
+    private async api(method: string, params: any = {}): Promise<any> {
+        const resp = await fetch(`${this.baseUrl}/${method}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params)
+        });
+        const data: any = await resp.json();
+        if (!data.ok) {
+            throw new Error(`Telegram Error [${method}]: ${data.description}`);
         }
-        // In a real Worker, you'd handle authentication via QR or reusable session string
-    }
-
-    async listen() {
-        await this.connect();
-        const targetId = this.env.TELEGRAM_SOURCE_CHANNEL_ID;
-
-        console.log(`[TelegramCollector] Listening for events in ${targetId}`);
-
-        this.client.addEventHandler(async (event: any) => {
-            const message = event.message;
-            if (!message || message.out) return;
-
-            // Check if message is from the target channel
-            const peerId = message.peerId;
-            let chatId = '';
-
-            if (peerId) {
-                if (peerId.channelId) chatId = `-100${peerId.channelId.toString()}`;
-                else if (peerId.chatId) chatId = `-${peerId.chatId.toString()}`;
-                else if (peerId.userId) chatId = peerId.userId.toString();
-            }
-
-            if (chatId === targetId) {
-                console.log(`[TelegramCollector] Ingesting message from ${chatId}`);
-                await this.onMessage(message);
-            }
-        }, new NewMessage({ incoming: true }));
+        return data.result;
     }
 
     async sendMessage(chatId: string, text: string): Promise<any> {
-        await this.connect();
-        return await this.client.sendMessage(chatId, { message: text });
+        return await this.api('sendMessage', {
+            chat_id: chatId,
+            text: text
+        });
     }
 
     async pinMessage(chatId: string, messageId: number) {
-        await this.connect();
         try {
-            await this.client.pinMessage(chatId, messageId, { notify: true });
+            await this.api('pinChatMessage', {
+                chat_id: chatId,
+                message_id: messageId
+            });
         } catch (e) {
-            console.error(`[TelegramCollector] Pinning failed for ${messageId} in ${chatId}:`, e);
+            console.error(`[TelegramCollector] Pinning failed:`, e);
         }
     }
 
     async downloadMedia(message: any): Promise<Uint8Array | null> {
-        await this.connect();
-        if (!message.media) return null;
-        const buffer = await this.client.downloadMedia(message.media, {});
-        return buffer as Uint8Array;
+        // Message format for Bot API is different. 
+        // We'll look for photo or document.
+        const fileId = message.photo ? message.photo[message.photo.length - 1].file_id :
+            message.document ? message.document.file_id : null;
+
+        if (!fileId) return null;
+
+        const file = await this.api('getFile', { file_id: fileId });
+        const filePath = file.file_path;
+        const downloadUrl = `https://api.telegram.org/file/bot${this.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+
+        const resp = await fetch(downloadUrl);
+        const buffer = await resp.arrayBuffer();
+        return new Uint8Array(buffer);
     }
 
+    async getUpdates(offset: number = 0): Promise<any[]> {
+        return await this.api('getUpdates', {
+            offset,
+            timeout: 0,
+            allowed_updates: ["message", "channel_post"]
+        });
+    }
+
+    // Historical messages using a User account / history endpoint is NOT possible with Bot API 
+    // without a third-party library or webhook history log. 
+    // We'll provide a dummy method for now to avoid breaking RCNS_DO or refactor it.
     async getMessages(chatId: string, limit: number = 10): Promise<any[]> {
-        await this.connect();
-        return await this.client.getMessages(chatId, { limit });
+        console.warn("[TelegramCollector] getMessages is not natively supported by Bot API. Use getUpdates.");
+        return [];
     }
 
-    async getDialogs(): Promise<any[]> {
-        await this.connect();
-        return await this.client.getDialogs({});
+    async getMe(): Promise<any> {
+        return await this.api('getMe');
     }
 }
+import { Env } from '../types';

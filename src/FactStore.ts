@@ -17,6 +17,8 @@ export class FactStore {
                 status TEXT,
                 created_at INTEGER,
                 published_at INTEGER,
+                twitter_id TEXT,
+                event_date TEXT,
                 content_hash TEXT
             )
         `);
@@ -32,20 +34,24 @@ export class FactStore {
             )
         `);
 
-        // Migration: Add generated_tweet if not exists
+        // Migration: Add new columns if not exists
         try {
             this.storage.sql.exec('ALTER TABLE posts ADD COLUMN generated_tweet TEXT');
-        } catch (e) {
-            // Already exists or other error
-        }
+        } catch (e) { }
+        try {
+            this.storage.sql.exec('ALTER TABLE posts ADD COLUMN twitter_id TEXT');
+        } catch (e) { }
+        try {
+            this.storage.sql.exec('ALTER TABLE posts ADD COLUMN event_date TEXT');
+        } catch (e) { }
     }
 
     async savePost(item: PostItem) {
         const sql = `
             INSERT OR REPLACE INTO posts (
                 id, source_url, raw_text, image_url, processed_json, generated_tweet,
-                status, created_at, published_at, content_hash
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, created_at, published_at, twitter_id, event_date, content_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         this.storage.sql.exec(
@@ -59,6 +65,8 @@ export class FactStore {
             item.status,
             item.created_at,
             item.published_at || null,
+            item.twitter_id || null,
+            item.event_date || null,
             item.content_hash || null
         );
     }
@@ -71,10 +79,25 @@ export class FactStore {
         }));
     }
 
-    getPost(id: string): PostItem | null {
-        const row = this.storage.sql.exec('SELECT * FROM posts WHERE id = ?', id).toArray()[0] as any;
+    async getPost(id: string): Promise<PostItem | null> {
+        const sql = `SELECT * FROM posts WHERE id = ?`;
+        const results = this.storage.sql.exec(sql, id);
+        const row = results.next().value;
         if (!row) return null;
+        return this.mapRow(row);
+    }
 
+    async getEventsForDate(date: string): Promise<PostItem[]> {
+        const sql = `SELECT * FROM posts WHERE event_date = ? AND status != 'posted'`;
+        const results = this.storage.sql.exec(sql, date);
+        const posts: PostItem[] = [];
+        for (const row of results) {
+            posts.push(this.mapRow(row));
+        }
+        return posts;
+    }
+
+    private mapRow(row: any): PostItem {
         return {
             ...row,
             processed_json: row.processed_json ? JSON.parse(row.processed_json) : null
@@ -111,9 +134,13 @@ export class FactStore {
 
         return {
             ingested: posts.length,
-            published: posts.filter(p => p.status === 'published').length,
+            published: posts.filter(p => p.status === 'posted').length,
             errors: logs.length,
             tweets: posts.filter(p => p.generated_tweet).map(p => p.generated_tweet)
         };
+    }
+
+    async listLogs(limit: number = 20): Promise<any[]> {
+        return this.storage.sql.exec('SELECT * FROM logs ORDER BY created_at DESC LIMIT ?', limit).toArray();
     }
 }

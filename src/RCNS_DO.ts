@@ -26,171 +26,123 @@ export class RCNS_DO extends DurableObject<Env> {
         const url = new URL(request.url);
         console.log(`[RCNS_DO] Request Path: ${url.pathname}`);
 
-        if (url.pathname === '/test-twitter') {
-            try {
-                const id = await this.twitter.postText(`Test tweet from RCNS Worker at ${new Date().toISOString()}`);
-                return new Response(`Tweet posted! ID: ${id}`);
-            } catch (e: any) {
-                return new Response(`Failed to tweet: ${e.message}`, { status: 500 });
-            }
+        // Self-prime alarm if missing
+        const currentAlarm = await this.ctx.storage.getAlarm();
+        if (currentAlarm === null) {
+            console.log('[RCNS_DO] No alarm found, priming heartbeat...');
+            await this.ctx.storage.setAlarm(Date.now() + 5000);
         }
 
-        if (url.pathname === '/test-gemini') {
-            try {
-                // 1. Analyze
-                const jsonStr = await this.gemini.analyzeText("Rotary Club meeting next Tuesday at 7PM at the Grand Hotel. Speaker: John Doe.");
-                const cleanJson = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
-                const analysis = JSON.parse(cleanJson);
-
-                // 2. Generate Tweet
-                const tweet = await this.gemini.generateTweetFromAnalysis(analysis);
-
-                return new Response(JSON.stringify({ analysis, tweet }, null, 2), { headers: { 'Content-Type': 'application/json' } });
-            } catch (e: any) {
-                return new Response(`Gemini failed: ${e.message}`, { status: 500 });
-            }
-        }
-
-        if (url.pathname === '/test-models') {
-            try {
-                // Create a temporary instance to access the generic client if needed, 
-                // but GeminiService currently encapsulates the model. 
-                // We'll add a listModels method to GeminiService next.
-                const models = await this.gemini.listModels();
-                return new Response(JSON.stringify(models, null, 2), { headers: { 'Content-Type': 'application/json' } });
-            } catch (e: any) {
-                return new Response(`List Models failed: ${e.message}`, { status: 500 });
-            }
-        }
-
-        if (url.pathname === '/analyze-twitter') {
-            try {
-                const username = 'rotarynairobis';
-                const userId = await this.twitter.getUserByUsername(username);
-                if (!userId) return new Response('User not found', { status: 404 });
-
-                const tweets = await this.twitter.getUserTweets(userId);
-                return new Response(JSON.stringify({ username, tweets }, null, 2), { headers: { 'Content-Type': 'application/json' } });
-            } catch (e: any) {
-                return new Response(`Analysis failed: ${e.message}`, { status: 500 });
-            }
-        }
-
-        if (url.pathname === '/test-image-process') {
-            try {
-                // Use a sample event flyer image (public URL) for testing
-                const imageUrl = url.searchParams.get('url') || 'https://www.rotary.org/sites/default/files/styles/w_2800/public/2020-10/End-Polio-Now-logo.jpg?itok=3vV0uV0_';
-
-                const imageResp = await fetch(imageUrl);
-                const imageBuffer = await imageResp.arrayBuffer();
-
-                // 1. Analyze Image
-                const jsonStr = await this.gemini.analyzeImage(new Uint8Array(imageBuffer));
-                const cleanJson = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
-                const analysis = JSON.parse(cleanJson);
-
-                // 2. Generate Tweet
-                const tweet = await this.gemini.generateTweetFromAnalysis(analysis);
-
-                return new Response(JSON.stringify({ imageUrl, analysis, tweet }, null, 2), { headers: { 'Content-Type': 'application/json' } });
-            } catch (e: any) {
-                return new Response(`Image Process Failed: ${e.message}`, { status: 500 });
-            }
-        }
 
         if (url.pathname === '/debug-posts') {
             try {
-                // We'll need to add a listPosts method to FactStore or just query storage
-                // For now, let's just list keys in storage to see what's there
-                const posts = await this.store.listPosts(); // Need to implement this
+                const posts = await this.store.listPosts();
                 return new Response(JSON.stringify(posts, null, 2), { headers: { 'Content-Type': 'application/json' } });
             } catch (e: any) {
-                return new Response(`Debug failed: ${e.message}`, { status: 500 });
+                return new Response(`Posts Debug Failed: ${e.message}`, { status: 500 });
             }
         }
 
-        if (url.pathname === '/publish-id') {
+
+
+        if (url.pathname === '/debug-logs') {
             try {
-                const id = url.searchParams.get('id');
-                if (!id) return new Response('Missing id', { status: 400 });
-                const post = await this.store.getPost(id);
-                if (!post) return new Response('Post not found', { status: 404 });
-
-                await this.twitter.publish(post, null);
-                post.status = 'posted';
-                post.published_at = Date.now();
-                await this.store.savePost(post);
-                return new Response(`Published post ${id}`);
+                const logs = await this.store.listLogs(50);
+                return new Response(JSON.stringify(logs, null, 2), { headers: { 'Content-Type': 'application/json' } });
             } catch (e: any) {
-                return new Response(`Publish ID failed: ${e.message}`, { status: 500 });
+                return new Response(`Logs Debug Failed: ${e.message}`, { status: 500 });
             }
         }
 
-        if (url.pathname === '/test-raw-tweet') {
+        if (url.pathname === '/debug-state') {
             try {
-                const text = url.searchParams.get('text') || 'Standard testing tweet';
-                const id = await this.twitter.postText(text);
-                return new Response(`Tweet posted: ${id}`);
+                const lastId = await this.ctx.storage.get<number>('lastUpdateId') || 0;
+                const lastReportDay = await this.ctx.storage.get<string>('lastReportDay');
+                const nextAlarm = await this.ctx.storage.getAlarm();
+                return new Response(JSON.stringify({
+                    lastId,
+                    lastReportDay,
+                    nextAlarm: nextAlarm ? new Date(nextAlarm).toISOString() : null
+                }, null, 2), { headers: { 'Content-Type': 'application/json' } });
             } catch (e: any) {
-                return new Response(`Raw tweet failed: ${e.message}`, { status: 500 });
+                return new Response(`State Debug Failed: ${e.message}`, { status: 500 });
             }
         }
 
-        if (url.pathname === '/publish-pending') {
-            try {
-                console.log('[RCNS_DO] Starting /publish-pending');
-                const posts = await this.store.listPosts();
-                console.log(`[RCNS_DO] Total posts in store: ${posts.length}`);
-
-                const pending = posts.filter(p => (p.status === 'pending' || p.status === 'failed') && p.generated_tweet);
-                console.log(`[RCNS_DO] Filtered ${pending.length} candidate posts for publication.`);
-
-                let successCount = 0;
-                for (const post of pending) {
-                    try {
-                        console.log(`[RCNS_DO] Executing publish for ID: ${post.id}`);
-                        const result = await this.twitter.publish(post, null);
-                        console.log(`[RCNS_DO] Publish result for ${post.id}: ${result}`);
-
-                        post.status = 'posted';
-                        post.published_at = Date.now();
-                        await this.store.savePost(post);
-                        successCount++;
-                    } catch (e: any) {
-                        console.error(`[RCNS_DO] Publish Failed for ${post.id}:`, e.message);
-                        post.status = 'failed';
-                        await this.store.savePost(post);
-                    }
-                }
-                return new Response(`Processed ${successCount} posts.`);
-            } catch (e: any) {
-                console.error('[RCNS_DO] Publish Loop Error:', e.message);
-                return new Response(`Publish failed: ${e.message}`, { status: 500 });
-            }
-        }
-
-        if (url.pathname === '/debug-dialogs') {
-            try {
-                const dialogs = await this.telegram.getDialogs();
-                const list = dialogs.map(d => ({
-                    name: d.title || d.name,
-                    id: d.id.toString(),
-                    type: d.isChannel ? 'channel' : d.isGroup ? 'group' : 'user'
-                }));
-                return new Response(JSON.stringify(list, null, 2), { headers: { 'Content-Type': 'application/json' } });
-            } catch (e: any) {
-                return new Response(`Dialogs failed: ${e.message}`, { status: 500 });
-            }
-        }
 
         if (url.pathname === '/scheduled') {
             await this.handleScheduled();
-            return new Response('OK');
+            return new Response('OK (Manual Trigger)');
         }
 
         if (url.pathname === '/generate-report') {
             await this.generateDailyReport();
             return new Response('Report generated and pinned.');
+        }
+
+        if (url.pathname === '/health') {
+            try {
+                const lastPollSuccess = await this.ctx.storage.get<number>('lastPollSuccess') || 0;
+                const pollFailureCount = await this.ctx.storage.get<number>('pollFailureCount') || 0;
+                const now = Date.now();
+                const isStale = (now - lastPollSuccess) > 15 * 60 * 1000; // 15 mins
+
+                const status = (pollFailureCount < 5 && !isStale) ? 'OK' : 'DEGRADED';
+
+                // Get recent processed items for monitoring
+                const recentPosts = await this.store.listPosts();
+                const processedItems = recentPosts.slice(0, 5).map(p => ({
+                    id: p.id,
+                    status: p.status,
+                    time: new Date(p.created_at).toISOString(),
+                    tweet_url: p.twitter_id ? `https://twitter.com/i/status/${p.twitter_id}` : null,
+                    summary: p.processed_json?.summary || p.raw_text.substring(0, 50)
+                }));
+
+                return new Response(JSON.stringify({
+                    status,
+                    lastPollSuccess: new Date(lastPollSuccess).toISOString(),
+                    pollFailureCount,
+                    isStale,
+                    now: new Date(now).toISOString(),
+                    recent_items: processedItems
+                }, null, 2), {
+                    status: status === 'OK' ? 200 : 500,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } catch (e: any) {
+                return new Response(`Health Check Failed: ${e.message}`, { status: 500 });
+            }
+        }
+
+        if (url.pathname === '/history') {
+            try {
+                const sinceParam = url.searchParams.get('since') || '2026-01-28';
+                const sinceTimestamp = Math.floor(new Date(sinceParam).getTime() / 1000);
+                const limit = parseInt(url.searchParams.get('limit') || '100');
+                const targetId = this.env.TELEGRAM_SOURCE_CHANNEL_ID;
+
+                console.log(`[RCNS_DO] Fetching history since ${sinceParam} (${sinceTimestamp})`);
+                const messages = await this.telegram.getMessages(targetId, limit);
+
+                const filtered = messages
+                    .filter(m => m.date >= sinceTimestamp)
+                    .map(m => ({
+                        id: m.id,
+                        date: new Date(m.date * 1000).toISOString(),
+                        text: m.message || '[Media]',
+                        hasMedia: !!m.media
+                    }))
+                    .sort((a, b) => b.id - a.id); // Newest first
+
+                return new Response(JSON.stringify({
+                    since: sinceParam,
+                    count: filtered.length,
+                    messages: filtered
+                }, null, 2), { headers: { 'Content-Type': 'application/json' } });
+            } catch (e: any) {
+                return new Response(`History check failed: ${e.message}`, { status: 500 });
+            }
         }
 
         return new Response('RCNS Durable Object Online');
@@ -204,8 +156,8 @@ export class RCNS_DO extends DurableObject<Env> {
         const nairobiDate = new Date(now.getTime() + (3 * 60 * 60 * 1000));
         const todayStr = nairobiDate.toISOString().split('T')[0];
 
-        // Trigger ingest audit (polling) every time handleScheduled is called
-        await this.alarm();
+        // Trigger ingest audit (polling)
+        await this.checkNewMessages();
 
         // Trigger daily report at midnight Nairobi time (21:00 UTC), once per day
         if (nairobiHour === 0 && lastReportDay !== todayStr) {
@@ -217,11 +169,28 @@ export class RCNS_DO extends DurableObject<Env> {
                 this.logger.error('RCNS_DO', 'Failed to generate daily Nairobi report', e);
             }
         }
+
+        // Trigger daily event thread at 6 AM Nairobi time, once per day
+        const lastThreadDay = await this.ctx.storage.get<string>('lastThreadDay');
+        if (nairobiHour === 6 && lastThreadDay !== todayStr) {
+            console.log(`[RCNS_DO] Nairobi 6 AM detected (${todayStr}), generating daily event thread...`);
+            try {
+                await this.generateDailyEventThread();
+                await this.ctx.storage.put('lastThreadDay', todayStr);
+            } catch (e) {
+                this.logger.error('RCNS_DO', 'Failed to generate daily event thread', e);
+            }
+        }
     }
 
     async alarm() {
-        console.log('[RCNS_DO] Alarm triggered, checking for new messages...');
-        await this.checkNewMessages();
+        console.log('[RCNS_DO] Alarm pulse triggered.');
+        await this.handleScheduled();
+
+        // Reschedule for 5 minutes from now
+        const nextAlarm = Date.now() + 5 * 60 * 1000;
+        await this.ctx.storage.setAlarm(nextAlarm);
+        console.log(`[RCNS_DO] Next alarm scheduled for: ${new Date(nextAlarm).toISOString()}`);
     }
 
     async generateDailyReport() {
@@ -248,14 +217,35 @@ export class RCNS_DO extends DurableObject<Env> {
             report += `📭 No tweets posted in the last 24h.`;
         }
 
+        report += `\n`;
+
+        // Check for mentions/replies
+        try {
+            const myId = await this.twitter.getMe();
+            const mentions = await this.twitter.getMentions(myId);
+
+            if (mentions.length > 0) {
+                report += `\n💬 *New Replies/Mentions:*\n`;
+                for (const m of mentions) {
+                    const cleanText = m.text ? m.text.replace(/\n/g, ' ').substring(0, 100) : 'No text';
+                    report += `- [Open Reply](https://twitter.com/user/status/${m.id}): "${cleanText}"\n`;
+                }
+            } else {
+                report += `\n💬 No new replies detected.\n`;
+            }
+        } catch (e: any) {
+            this.logger.error('RCNS_DO', 'Failed to fetch mentions for report', e);
+            report += `\n⚠️ Failed to fetch replies.\n`;
+        }
+
         const targetId = this.env.TELEGRAM_SOURCE_CHANNEL_ID;
         console.log(`[RCNS_DO] Sending daily report to ${targetId}`);
 
         try {
             const sentMsg = await this.telegram.sendMessage(targetId, report);
-            if (sentMsg && sentMsg.id) {
-                console.log(`[RCNS_DO] Report sent (ID: ${sentMsg.id}). Pinning...`);
-                await this.telegram.pinMessage(targetId, sentMsg.id);
+            if (sentMsg && sentMsg.message_id) {
+                console.log(`[RCNS_DO] Report sent (ID: ${sentMsg.message_id}). Pinning...`);
+                await this.telegram.pinMessage(targetId, sentMsg.message_id);
             }
         } catch (e) {
             this.logger.error('RCNS_DO', 'Failed to send/pin Telegram report', e);
@@ -264,51 +254,69 @@ export class RCNS_DO extends DurableObject<Env> {
     }
 
     async checkNewMessages() {
+        await this.store.logError('RCNS_DO', 'TRACE: checkNewMessages started');
         try {
             const targetId = this.env.TELEGRAM_SOURCE_CHANNEL_ID;
-            const lastId = await this.ctx.storage.get<number>('lastProcessedId') || 0;
+            const lastUpdateId = await this.ctx.storage.get<number>('lastUpdateId') || 0;
 
-            console.log(`[RCNS_DO] Polling ${targetId} for messages > ${lastId}`);
-            const messages = await this.telegram.getMessages(targetId, 5);
+            console.log(`[RCNS_DO] Polling for updates after ${lastUpdateId}`);
+            const updates = await this.telegram.getUpdates(lastUpdateId + 1);
 
-            // GramJS returns messages in reverse order (newest first usually, but check)
-            // We want to process them in chronological order
-            const newMessages = messages
-                .filter(m => m.id > lastId)
-                .sort((a, b) => a.id - b.id);
-
-            if (newMessages.length === 0) {
-                console.log('[RCNS_DO] No new messages found.');
+            if (updates.length === 0) {
+                console.log('[RCNS_DO] No new updates found.');
+                // Update success timestamp anyway to show heartbeat
+                await this.ctx.storage.put('lastPollSuccess', Date.now());
+                await this.ctx.storage.put('pollFailureCount', 0);
                 return;
             }
 
-            for (const msg of newMessages) {
-                await this.handleIngest(msg);
-                await this.ctx.storage.put('lastProcessedId', msg.id);
+            for (const update of updates) {
+                const msg = update.channel_post || update.message;
+                // Verify it's from our target channel
+                if (msg && msg.chat.id.toString() === targetId) {
+                    await this.handleIngest(msg);
+                }
+                await this.ctx.storage.put('lastUpdateId', update.update_id);
             }
 
-            console.log(`[RCNS_DO] Processed ${newMessages.length} new messages.`);
+            console.log(`[RCNS_DO] Processed ${updates.length} updates.`);
+
+            // Reset failure count and update success timestamp
+            await this.ctx.storage.put('lastPollSuccess', Date.now());
+            await this.ctx.storage.put('pollFailureCount', 0);
+
         } catch (e: any) {
             console.error('[RCNS_DO] Polling Failed:', e.message);
+            await this.store.logError('RCNS_DO', `Polling Failed: ${e.message}`, { stack: e.stack });
+
+            // Track consecutive failures
+            const count = (await this.ctx.storage.get<number>('pollFailureCount') || 0) + 1;
+            await this.ctx.storage.put('pollFailureCount', count);
+
+            if (count === 5) {
+                const alert = `🚨 *RCNS ADMIN ALERT*\n\nIngestion has failed for 25 consecutive minutes.\nError: \`${e.message}\`\n\nAutomated processing may be stopped.`;
+                await this.telegram.sendMessage(this.env.TELEGRAM_SOURCE_CHANNEL_ID, alert);
+                console.warn('[RCNS_DO] 5 consecutive failures detected, alert sent.');
+            }
         }
     }
 
     async handleIngest(msg: any) {
-        const id = msg.id.toString();
+        const id = (msg.message_id || msg.id).toString();
         const existing = await this.store.getPost(id);
         if (existing) {
             console.log(`[RCNS_DO] Post ${id} already exists, skipping.`);
             return;
         }
 
-        console.log('Ingesting message:', msg.id);
+        console.log('Ingesting message:', id);
 
         let analysis = null;
-        const text = msg.message || '';
+        const text = msg.text || msg.caption || msg.message || '';
         let mediaBuffer: Uint8Array | null = null;
 
-        // 1. Check for media
-        if (msg.media) {
+        // 1. Check for media (Bot API has photo array or document)
+        if (msg.photo || msg.document || msg.media) {
             console.log('Message has media, downloading...');
             mediaBuffer = await this.telegram.downloadMedia(msg);
         }
@@ -335,7 +343,7 @@ export class RCNS_DO extends DurableObject<Env> {
 
         // 3. Generate Tweet from Analysis (if successful)
         let generatedTweet = '';
-        if (analysis) {
+        if (analysis && analysis.type !== 'calendar') {
             try {
                 generatedTweet = await this.gemini.generateTweetFromAnalysis(analysis);
                 console.log('Generated Tweet:', generatedTweet);
@@ -346,40 +354,155 @@ export class RCNS_DO extends DurableObject<Env> {
 
         // Construct a PostItem from the Telegram message
         const post: PostItem = {
-            id: msg.id.toString(),
-            source_url: `https://t.me/c/${this.env.TELEGRAM_SOURCE_CHANNEL_ID.replace('-100', '')}/${msg.id}`,
+            id: (msg.message_id || msg.id).toString(),
+            source_url: `https://t.me/c/${this.env.TELEGRAM_SOURCE_CHANNEL_ID.replace('-100', '')}/${msg.message_id || msg.id}`,
             raw_text: text,
             processed_json: analysis,
             generated_tweet: generatedTweet,
             status: 'pending',
             created_at: Date.now(),
+            event_date: analysis?.date ? analysis.date.split('T')[0] : null,
         };
 
         // Save to FactStore (initial pending state)
         await this.store.savePost(post);
         console.log(`Saved pending post ${post.id} to FactStore with analysis.`);
 
-        // 4. Auto-Publish (if tweet generated)
-        if (generatedTweet) {
-            if (analysis?.is_upcoming === false) {
-                console.log(`Skipping publication for past event: ${post.id}`);
-                post.status = 'posted'; // Mark as 'posted' to avoid retries, or add a 'skipped' status
-                post.published_at = Date.now();
-                await this.store.savePost(post);
-                return;
+        if (analysis?.type === 'calendar') {
+            await this.publishCalendarThread(post, analysis, mediaBuffer);
+
+            // Update status to posted
+            post.status = 'posted';
+            post.published_at = Date.now();
+            await this.store.savePost(post);
+            console.log(`Published calendar thread for post ${post.id}.`);
+        } else {
+            console.log(`Saved post ${post.id} to FactStore with analysis. Status: pending for 6 AM thread.`);
+        }
+    }
+
+    async publishCalendarThread(post: PostItem, analysis: any, mediaBuffer: Uint8Array | null) {
+        let clubName = analysis.clubName || 'the Club';
+        const month = analysis.month || 'this month';
+
+        // Clean club name
+        clubName = clubName.replace(/The Rotary Club of /i, '').replace(/Rotary Club of /i, '');
+
+        const header = `Here's what will be happening at The Rotary Club of ${clubName} in ${month}:`;
+
+        if (!mediaBuffer) {
+            this.logger.error('RCNS_DO', `Warning: No media buffer available for calendar thread ${post.id}`);
+        }
+
+        // Post Main Tweet with Media
+        const mainTweetId = await this.twitter.publish({ ...post, generated_tweet: header }, mediaBuffer, undefined);
+        this.logger.log('RCNS_DO', `Calendar thread started: ${mainTweetId}`);
+
+        let lastTweetId = mainTweetId;
+
+        // Post Events
+        if (analysis.events && Array.isArray(analysis.events)) {
+            for (const event of analysis.events) {
+                const date = event.date || 'TBD';
+                const title = event.title || 'Event';
+                const venue = event.venue ? `📍 ${event.venue}` : '';
+                const time = event.time ? `⏰ ${event.time}` : '';
+
+                const replyText = `📅 ${date}: ${title}\n${venue}\n${time}`.trim();
+
+                try {
+                    lastTweetId = await this.twitter.postText(replyText, lastTweetId);
+                } catch (e: any) {
+                    this.logger.error('RCNS_DO', `Failed to reply in calendar thread`, e);
+                }
+            }
+        }
+
+        // Post CTA Tweet
+        const ctaText = "Comment below to get early notifications of upcoming events on WhatsApp.";
+        try {
+            await this.twitter.postText(ctaText, lastTweetId);
+            this.logger.log('RCNS_DO', `CTA posted for calendar thread: ${mainTweetId}`);
+        } catch (e: any) {
+            this.logger.error('RCNS_DO', `Failed to post CTA for calendar thread`, e);
+        }
+
+        return mainTweetId;
+    }
+
+    async generateDailyEventThread() {
+        // Find events for TODAY in Nairobi
+        const now = new Date();
+        const nairobiDate = new Date(now.getTime() + (3 * 60 * 60 * 1000));
+        const todayStr = nairobiDate.toISOString().split('T')[0];
+
+        this.logger.log('RCNS_DO', `Building thread for ${todayStr}...`);
+        const events = await this.store.getEventsForDate(todayStr);
+
+        if (events.length === 0) {
+            this.logger.log('RCNS_DO', `No events found for ${todayStr}. Skipping thread.`);
+            return;
+        }
+
+        // Format: 10th December
+        const day = nairobiDate.getDate();
+        const month = nairobiDate.toLocaleString('en-GB', { month: 'long', timeZone: 'Africa/Nairobi' });
+        const dateDisplay = `${day}${this.getOrdinal(day)} ${month}`;
+
+        // Tweet 1: Header
+        const header = `📅 Events for ${dateDisplay}:\n\nIf you are interested in networking, professional development, or community service, here are some events you should attend.`;
+
+        try {
+            let lastTweetId = await this.twitter.postText(header);
+            this.logger.log('RCNS_DO', `Thread started: ${lastTweetId}`);
+
+            for (const post of events) {
+                try {
+                    // Re-download media for the tweet if available
+                    let mediaBuffer: Uint8Array | null = null;
+                    if (post.image_url) {
+                        try {
+                            const resp = await fetch(post.image_url);
+                            if (resp.ok) mediaBuffer = new Uint8Array(await resp.arrayBuffer());
+                        } catch (e) {
+                            this.logger.error('RCNS_DO', `Failed to fetch media for post ${post.id}`, e);
+                        }
+                    }
+
+                    const tweetId = await this.twitter.publish(post, mediaBuffer, lastTweetId);
+
+                    // Mark as posted
+                    post.status = 'posted';
+                    post.published_at = Date.now();
+                    post.twitter_id = tweetId;
+                    await this.store.savePost(post);
+
+                } catch (e: any) {
+                    this.logger.error('RCNS_DO', `Failed to post thread item ${post.id}`, e);
+                }
             }
 
+            // Post CTA Tweet
+            const ctaText = "Comment below to get early notifications of upcoming events on WhatsApp.";
             try {
-                console.log(`Publishing tweet for post ${post.id}...`);
-                const twitterId = await this.twitter.publish(post, mediaBuffer);
-                post.status = 'posted';
-                post.published_at = Date.now();
-                // Save again with 'posted' status
-                await this.store.savePost(post);
-                console.log(`Successfully posted tweet! ID: ${twitterId}`);
+                await this.twitter.postText(ctaText, lastTweetId);
+                this.logger.log('RCNS_DO', `CTA posted for daily thread.`);
             } catch (e: any) {
-                this.logger.error('RCNS_DO', 'Failed to publish tweet', e);
+                this.logger.error('RCNS_DO', `Failed to post CTA for daily thread`, e);
             }
+
+        } catch (e: any) {
+            this.logger.error('RCNS_DO', 'Failed to initiate daily thread', e);
+        }
+    }
+
+    private getOrdinal(d: number) {
+        if (d > 3 && d < 21) return 'th';
+        switch (d % 10) {
+            case 1: return "st";
+            case 2: return "nd";
+            case 3: return "rd";
+            default: return "th";
         }
     }
 }

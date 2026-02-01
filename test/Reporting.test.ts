@@ -81,16 +81,16 @@ describe('RCNS_DO Daily Reporting', () => {
         );
     });
 
-    it('triggers report only at midnight UTC', async () => {
-        // Mock date to 1AM
-        vi.setSystemTime(new Date('2026-01-29T01:00:00Z'));
+    it('triggers report only at midnight Nairobi (21:00 UTC)', async () => {
+        // Mock date to 10PM UTC (1AM Nairobi) -> Should NOT trigger
+        vi.setSystemTime(new Date('2026-01-29T22:00:00Z'));
         const spy = vi.spyOn(rcnsDo, 'generateDailyReport');
 
         await rcnsDo.handleScheduled();
         expect(spy).not.toHaveBeenCalled();
 
-        // Mock date to Midnight
-        vi.setSystemTime(new Date('2026-01-29T00:00:00Z'));
+        // Mock date to 9PM UTC (Midnight Nairobi) -> Should trigger
+        vi.setSystemTime(new Date('2026-01-29T21:00:00Z'));
         mockStorage.get.mockResolvedValueOnce('2026-01-28'); // last report was yesterday
 
         await rcnsDo.handleScheduled();

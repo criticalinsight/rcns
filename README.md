@@ -4,17 +4,19 @@ RCNS is a production-grade **Cloudflare Worker** designed to automate event noti
 
 ## 🚀 Key Features
 
--   **Cloudflare Workers & Durable Objects**: A serverless backbone that provides 24/7 reliability and persistence via SQLite (D1 on DO).
--   **Gemini AI Integration**: Uses `gemini-2.5-flash` for:
-    -   **Vision**: Extracting event details (Date, Venue, Speaker) from images/flyers.
-    -   **Text Analysis**: Summarizing and structuring event information.
-    -   **Tweet Generation**: Crafting professional, brand-aligned tweets in the `@rotarynairobis` style (No hashtags/emojis).
--   **Telegram Polling**: Periodically polls a dedicated Telegram channel for new event forwards using **GramJS**.
--   **Automated Workflow**: Fully automated cycle from Telegram Ingestion → AI Analysis → Twitter Publication.
--   **Daily Analytics & Reporting**:
-    -   **Midnight Summaries**: Aggregates 24-hour performance data (ingests, posts, errors) at 00:00 UTC.
-    -   **Telegram Distribution**: Sends formatted reports to the source channel.
-    -   **Persistent Pinning**: Automatically pins daily reports for community visibility.
+- **Cloudflare Workers & Durable Objects**: A serverless backbone that provides 24/7 reliability and persistence via SQLite (D1 on DO).
+- **Gemini AI Integration**: Uses `gemini-2.5-flash` (or newer) for:
+  - **Vision**: Extracting event details (Date, Venue, Speaker) from images/flyers with `is_upcoming` detection.
+  - **Text Analysis**: Summarizing and structuring event information from plain text messages.
+  - **Tweet Generation**: Crafting professional, brand-aligned tweets in the `@rotarynairobis` style (No hashtags/emojis).
+- **Automated Threading Workflow**:
+  - **Daily 6 AM Briefing**: Aggregates all events for the current day into a single narrative thread.
+  - **Monthly Calendar Unroller**: Instantly unrolls monthly schedule posters into detailed multi-tweet threads.
+  - **Call To Action (CTA)**: Automatically appends engagement footers to all threads.
+- **Daily Analytics & Reply Tracking**:
+  - **Nairobi Midnight Summaries**: Aggregates 24-hour performance data at 00:00 Nairobi Time (UTC+3).
+  - **Engagement Reporting**: Fetches and previews user replies/mentions from Twitter directly in the Telegram report.
+  - **Persistent Pinning**: Automatically pins reports for community visibility.
 
 ## 🛠 Architecture
 
@@ -24,41 +26,44 @@ For a deep dive into the system design, see [ARCHITECTURE.md](docs/ARCHITECTURE.
 
 Set the following secrets in your Cloudflare environmental variables (or `.dev.vars` for local development):
 
-### Telegram MTProto
--   `TELEGRAM_API_ID`: Your Telegram API ID.
--   `TELEGRAM_API_HASH`: Your Telegram API Hash.
--   `TELEGRAM_SESSION`: MTProto session string (generated via `scripts/generate_session.js`).
--   `TELEGRAM_SOURCE_CHANNEL_ID`: High-level ID of the source channel (e.g., `-100...`).
+### Telegram Bot API
+
+- `TELEGRAM_BOT_TOKEN`: Official bot token from @BotFather.
+- `TELEGRAM_SOURCE_CHANNEL_ID`: The ID of the primary feed channel (e.g., `-100...`).
 
 ### Twitter (X) API v2
--   `TWITTER_APP_KEY`
--   `TWITTER_APP_SECRET`
--   `TWITTER_ACCESS_TOKEN`
--   `TWITTER_ACCESS_SECRET`
+
+- `TWITTER_APP_KEY`
+- `TWITTER_APP_SECRET`
+- `TWITTER_ACCESS_TOKEN`
+- `TWITTER_ACCESS_SECRET`
 
 ### Google Gemini
--   `GEMINI_API_KEY`: API key for Google AI Studio.
+
+- `GEMINI_API_KEY`: API key for Google AI Studio.
 
 ## 📖 Development
 
 ### Local Setup
+
 ```bash
 bun install
-# Generate a Telegram Session string if needed
-bun scripts/generate_session.js
 ```
 
 ### Deployment
+
 ```bash
 # Push to Cloudflare Production
 bun run deploy
 ```
 
 ### Monitoring
+
 ```bash
 # Live logs from the Edge
 bun x wrangler tail
 ```
 
 ## 📜 License
+
 Private/Proprietary for the Rotary Club of Nairobi South.

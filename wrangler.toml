@@ -3,8 +3,6 @@ main = "src/worker.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-[triggers]
-crons = ["*/5 * * * *"] # 5-minute heartbeat
 
 [observability]
 enabled = true
@@ -22,7 +20,8 @@ binding = "AI"
 
 [vars]
 # TWITTER_APP_KEY = "..." (set via secret)
-# TELEGRAM_API_ID = "..." (set via secret)
+# TELEGRAM_BOT_TOKEN = "..." (set via secret)
+# TELEGRAM_API_ID = "..." (set via secret, deprecated)
 # TELEGRAM_API_HASH = "..." (set via secret)
 # TELEGRAM_BOT_TOKEN = "..." (set via secret)
 # GEMINI_API_KEY = "..." (set via secret)

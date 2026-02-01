@@ -3,10 +3,11 @@ import { DurableObjectNamespace, Ai } from '@cloudflare/workers-types';
 export interface Env {
     RCNS_DO: DurableObjectNamespace;
     AI: Ai;
-    TELEGRAM_API_ID: string;
-    TELEGRAM_API_HASH: string;
-    TELEGRAM_SESSION: string;
+    TELEGRAM_BOT_TOKEN: string;
     TELEGRAM_SOURCE_CHANNEL_ID: string;
+    TELEGRAM_API_ID?: string;
+    TELEGRAM_API_HASH?: string;
+    TELEGRAM_SESSION?: string;
     TWITTER_APP_KEY: string;
     TWITTER_APP_SECRET: string;
     TWITTER_ACCESS_TOKEN: string;
@@ -24,5 +25,7 @@ export interface PostItem {
     status: 'pending' | 'posted' | 'failed';
     created_at: number;
     published_at?: number;
+    twitter_id?: string;
+    event_date?: string; // YYYY-MM-DD
     content_hash?: string;
 }
