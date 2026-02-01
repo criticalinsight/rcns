@@ -19,11 +19,7 @@ This document outlines the automated workflow for the Rotary Club Notification S
 * **Action**:
     1. `RCNS_DO` downloads media if present.
     2. `GeminiService.analyzeImage(buffer)` or `analyzeText(text)` is called.
-    3. **Prompt**: Extracts precise event metadata:
-        * `summary`: Brief event description.
-        * `date`: Event date/time.
-        * `location`: Venue.
-        * `is_upcoming`: Boolean flag to filter past events.
+    3. **Prompt**: Determines if the post is a `single` event or a `calendar` of events.
     4. The JSON result is stored in `FactStore` (SQLite).
 
 ## 3. Storage (Persistence)
@@ -35,8 +31,11 @@ This document outlines the automated workflow for the Rotary Club Notification S
 
 ## 4. Publishing & Reporting
 
-* **Twitter**: Automatically posts if `is_upcoming` is true and a tweet copy is generated.
-* **Daily Reports**: Triggered at 00:00 Nairobi Time (UTC+3) via the same CRON heartbeat.
+* **Publishing Strategy**:
+  * **Monthly Calendar Unroller**: If Gemini detects a `calendar` type, it is unrolled into a thread **immediately**.
+  * **Daily 6 AM Briefing**: All other upcoming events are aggregated and posted as a single storyteller thread at 6:00 AM Nairobi time.
+  * **Engagement**: Every thread ends with a WhatsApp CTA tweet.
+* **Daily Reports**: Triggered at 00:00 Nairobi Time (UTC+3). Reports include Twitter metrics and a **Reply Monitoring** section with text previews of recent interactions.
 * **Mechanism**: Reports are sent to the Telegram source channel and pinned.
 
 ## Diagram
@@ -55,18 +54,25 @@ sequenceDiagram
     Telegram-->>DO: [New Updates]
     
     loop For each Update
-        DO->>Gemini: analyzeImage/Text
-        Gemini-->>DO: {summary, date, is_upcoming}
-        DO->>DO: Save to SQLite (status: pending)
-        alt is_upcoming == true
-            DO->>Twitter: postTweet
-            DO->>DO: Update SQLite (status: posted, twitter_id)
+        DO->>Gemini: analyze (type detection)
+        Gemini-->>DO: {type: single/calendar, details...}
+        DO->>DO: Save to SQLite
+        alt type == calendar
+            DO->>Twitter: publishCalendarThread (Immediate)
+            Twitter-->>DO: Success
+        else type == single
+            Note over DO: Wait for 6 AM
         end
     end
+
+    Note over DO: 6:00 AM Trigger
+    DO->>Twitter: publishDailyThread (Storytelling)
 
     Note over DO: Next Alarm: setAlarm(now + 5m)
 
     Note over DO: Midnight Nairobi: generateDailyReport()
-    DO->>Telegram: sendMessage(Report)
+    DO->>Twitter: getMentions()
+    Twitter-->>DO: [Reply Text + Links]
+    DO->>Telegram: sendMessage(Summary + Replies)
     DO->>Telegram: pinMessage(message_id)
 ```
