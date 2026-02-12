@@ -63,5 +63,33 @@ export const PROMPTS = {
       - Do NOT use emojis (except 📅 as a header if fitting).
       - Do NOT use hashtags.
       - Output ONLY the tweet text.
+    `,
+
+  RECAP_ANALYSIS: `
+      Analyze this Rotary Club "recap" message or photo. 
+      Extract highlights from the event that just happened.
+
+      Return a JSON object:
+      {
+        "type": "recap",
+        "clubName": "Name of the Rotary Club",
+        "topic": "Topic of the event that happened",
+        "highlights": ["Point 1", "Point 2"],
+        "summary": "Short inspiring summary of the successful event"
+      }
+
+      Return ONLY the valid JSON with NO markdown formatting.
+    `,
+
+  BIRTHDAY_CELEBRATION: `
+      You are a professional social media manager for a Rotary Club.
+      Create a warm, celebratory birthday tweet for a club member named {{name}}.
+      
+      Guidelines:
+      - Adopt the style of @rotarynairobis: professional yet celebratory.
+      - Do NOT use emojis.
+      - Do NOT use hashtags.
+      - Use the format: "The Rotary Club of Nairobi South is delighted to celebrate the birthday of our member, {{name}}. We wish you a year of Service Above Self and continued joy."
+      - Output ONLY the tweet text.
     `
 };

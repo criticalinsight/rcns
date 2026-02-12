@@ -13,6 +13,12 @@ export class RCNS_DO extends DurableObject<Env> {
     private twitter: TwitterPublisher;
     private gemini: GeminiService;
 
+    private lastUpdateId: number = 0;
+    private lastReportDay: string = "";
+    private lastThreadDay: string = "";
+    private lastBirthdayDay: string = "";
+    private processedIds = new Set<string>();
+
     constructor(ctx: DurableObjectState, env: Env) {
         super(ctx, env);
         this.store = new FactStore(this.ctx.storage);
@@ -20,6 +26,13 @@ export class RCNS_DO extends DurableObject<Env> {
         this.telegram = new TelegramCollector(env, this.handleIngest.bind(this));
         this.twitter = new TwitterPublisher(env);
         this.gemini = new GeminiService(env);
+
+        this.ctx.blockConcurrencyWhile(async () => {
+            this.lastUpdateId = await this.ctx.storage.get<number>('lastUpdateId') || 0;
+            this.lastReportDay = await this.ctx.storage.get<string>('lastReportDay') || "";
+            this.lastThreadDay = await this.ctx.storage.get<string>('lastThreadDay') || "";
+            this.lastBirthdayDay = await this.ctx.storage.get<string>('lastBirthdayDay') || "";
+        });
     }
 
     async fetch(request: Request): Promise<Response> {
@@ -56,11 +69,10 @@ export class RCNS_DO extends DurableObject<Env> {
 
         if (url.pathname === '/debug-state') {
             try {
-                const lastId = await this.ctx.storage.get<number>('lastUpdateId') || 0;
-                const lastReportDay = await this.ctx.storage.get<string>('lastReportDay');
+                const lastReportDay = this.lastReportDay;
                 const nextAlarm = await this.ctx.storage.getAlarm();
                 return new Response(JSON.stringify({
-                    lastId,
+                    lastId: this.lastUpdateId,
                     lastReportDay,
                     nextAlarm: nextAlarm ? new Date(nextAlarm).toISOString() : null
                 }, null, 2), { headers: { 'Content-Type': 'application/json' } });
@@ -89,23 +101,12 @@ export class RCNS_DO extends DurableObject<Env> {
 
                 const status = (pollFailureCount < 5 && !isStale) ? 'OK' : 'DEGRADED';
 
-                // Get recent processed items for monitoring
-                const recentPosts = await this.store.listPosts();
-                const processedItems = recentPosts.slice(0, 5).map(p => ({
-                    id: p.id,
-                    status: p.status,
-                    time: new Date(p.created_at).toISOString(),
-                    tweet_url: p.twitter_id ? `https://twitter.com/i/status/${p.twitter_id}` : null,
-                    summary: p.processed_json?.summary || p.raw_text.substring(0, 50)
-                }));
-
                 return new Response(JSON.stringify({
                     status,
                     lastPollSuccess: new Date(lastPollSuccess).toISOString(),
                     pollFailureCount,
                     isStale,
-                    now: new Date(now).toISOString(),
-                    recent_items: processedItems
+                    now: new Date(now).toISOString()
                 }, null, 2), {
                     status: status === 'OK' ? 200 : 500,
                     headers: { 'Content-Type': 'application/json' }
@@ -145,6 +146,50 @@ export class RCNS_DO extends DurableObject<Env> {
             }
         }
 
+        if (url.pathname === '/add-member') {
+            const name = url.searchParams.get('name');
+            const birthday = url.searchParams.get('birthday'); // MM-DD
+            if (!name || !birthday) return new Response('Missing name or birthday', { status: 400 });
+            await this.store.addMemberBirthday(name, birthday);
+            return new Response(`Added ${name} with birthday ${birthday}`);
+        }
+
+        if (url.pathname === '/test-tweet') {
+            try {
+                const tweetId = await this.twitter.postText("RCNS System Test: Service Above Self. [Test Tweet]");
+                return new Response(`Test tweet sent! ID: ${tweetId}`);
+            } catch (e: any) {
+                return new Response(`Test tweet failed: ${e.message}`, { status: 500 });
+            }
+        }
+
+        if (url.pathname === '/test-thread') {
+            const mockAnalysis = {
+                type: 'recap',
+                clubName: 'Nairobi South',
+                topic: 'Artificial Intelligence in Rotary',
+                highlights: [
+                    'Explored the future of AI in community service.',
+                    'Discussed ethical implications of automation.',
+                    'Brainstormed ways to leverage data for impact.'
+                ],
+                summary: 'An enlightening session on how technology can amplify our service.'
+            };
+            const post: PostItem = {
+                id: 'test-recap-' + Date.now(),
+                source_url: 'https://t.me/test/1',
+                raw_text: 'Test recap thread content',
+                status: 'pending',
+                created_at: Date.now()
+            };
+            try {
+                const threadId = await this.publishRecapThread(post, mockAnalysis, null);
+                return new Response(`Thread test initiated! Main ID: ${threadId}`);
+            } catch (e: any) {
+                return new Response(`Thread test failed: ${e.message}`, { status: 500 });
+            }
+        }
+
         return new Response('RCNS Durable Object Online');
     }
 
@@ -152,7 +197,6 @@ export class RCNS_DO extends DurableObject<Env> {
         const now = new Date();
         // Nairobi is UTC+3
         const nairobiHour = (now.getUTCHours() + 3) % 24;
-        const lastReportDay = await this.ctx.storage.get<string>('lastReportDay');
         const nairobiDate = new Date(now.getTime() + (3 * 60 * 60 * 1000));
         const todayStr = nairobiDate.toISOString().split('T')[0];
 
@@ -160,10 +204,11 @@ export class RCNS_DO extends DurableObject<Env> {
         await this.checkNewMessages();
 
         // Trigger daily report at midnight Nairobi time (21:00 UTC), once per day
-        if (nairobiHour === 0 && lastReportDay !== todayStr) {
+        if (nairobiHour === 0 && this.lastReportDay !== todayStr) {
             console.log(`[RCNS_DO] Nairobi Midnight detected (${todayStr}), generating daily report...`);
             try {
                 await this.generateDailyReport();
+                this.lastReportDay = todayStr;
                 await this.ctx.storage.put('lastReportDay', todayStr);
             } catch (e) {
                 this.logger.error('RCNS_DO', 'Failed to generate daily Nairobi report', e);
@@ -171,14 +216,26 @@ export class RCNS_DO extends DurableObject<Env> {
         }
 
         // Trigger daily event thread at 6 AM Nairobi time, once per day
-        const lastThreadDay = await this.ctx.storage.get<string>('lastThreadDay');
-        if (nairobiHour === 6 && lastThreadDay !== todayStr) {
+        if (nairobiHour === 6 && this.lastThreadDay !== todayStr) {
             console.log(`[RCNS_DO] Nairobi 6 AM detected (${todayStr}), generating daily event thread...`);
             try {
                 await this.generateDailyEventThread();
+                this.lastThreadDay = todayStr;
                 await this.ctx.storage.put('lastThreadDay', todayStr);
             } catch (e) {
                 this.logger.error('RCNS_DO', 'Failed to generate daily event thread', e);
+            }
+        }
+
+        // Trigger birthday check at 8 AM Nairobi time
+        if (nairobiHour === 8 && this.lastBirthdayDay !== todayStr) {
+            console.log(`[RCNS_DO] Nairobi 8 AM detected (${todayStr}), checking for birthdays...`);
+            try {
+                await this.checkBirthdays(nairobiDate);
+                this.lastBirthdayDay = todayStr;
+                await this.ctx.storage.put('lastBirthdayDay', todayStr);
+            } catch (e) {
+                this.logger.error('RCNS_DO', 'Failed to check birthdays', e);
             }
         }
     }
@@ -194,28 +251,10 @@ export class RCNS_DO extends DurableObject<Env> {
     }
 
     async generateDailyReport() {
-        const since = Date.now() - 24 * 60 * 60 * 1000;
-        const metrics = await this.store.getDailyMetrics(since);
-        const successRate = metrics.ingested > 0 ? ((metrics.published / metrics.ingested) * 100).toFixed(1) : '0.0';
-
-        let report = `📊 *RCNS Daily Analytics Report*\n`;
+        let report = `📊 *RCNS Daily Status Report*\n`;
         report += `📅 Date: ${new Date().toISOString().split('T')[0]}\n\n`;
-        report += `📈 *System Metrics (Last 24h):*\n`;
-        report += `- Messages Ingested: ${metrics.ingested}\n`;
-        report += `- Tweets Published: ${metrics.published}\n`;
-        report += `- System Errors: ${metrics.errors}\n`;
-        report += `- Success Rate: ${successRate}%\n\n`;
-
-        if (metrics.tweets.length > 0) {
-            report += `🐦 *Tweets Posted:*\n`;
-            metrics.tweets.forEach((tweet, i) => {
-                // Truncate if very long
-                const summary = tweet.length > 100 ? tweet.substring(0, 97) + '...' : tweet;
-                report += `${i + 1}. ${summary}\n`;
-            });
-        } else {
-            report += `📭 No tweets posted in the last 24h.`;
-        }
+        report += `✅ System is active and polling Telegram every 5 minutes.\n`;
+        report += `🔍 State: lastUpdateId=${this.lastUpdateId}\n`;
 
         report += `\n`;
 
@@ -254,10 +293,9 @@ export class RCNS_DO extends DurableObject<Env> {
     }
 
     async checkNewMessages() {
-        await this.store.logError('RCNS_DO', 'TRACE: checkNewMessages started');
         try {
             const targetId = this.env.TELEGRAM_SOURCE_CHANNEL_ID;
-            const lastUpdateId = await this.ctx.storage.get<number>('lastUpdateId') || 0;
+            const lastUpdateId = this.lastUpdateId;
 
             console.log(`[RCNS_DO] Polling for updates after ${lastUpdateId}`);
             const updates = await this.telegram.getUpdates(lastUpdateId + 1);
@@ -276,6 +314,7 @@ export class RCNS_DO extends DurableObject<Env> {
                 if (msg && msg.chat.id.toString() === targetId) {
                     await this.handleIngest(msg);
                 }
+                this.lastUpdateId = update.update_id;
                 await this.ctx.storage.put('lastUpdateId', update.update_id);
             }
 
@@ -303,9 +342,18 @@ export class RCNS_DO extends DurableObject<Env> {
 
     async handleIngest(msg: any) {
         const id = (msg.message_id || msg.id).toString();
-        const existing = await this.store.getPost(id);
+
+        // 0. Memory cache check
+        if (this.processedIds.has(id)) {
+            console.log(`[RCNS_DO] Post ${id} hit in-memory cache, skipping.`);
+            return;
+        }
+
+        // 1. Efficient SQL check
+        const existing = await this.store.hasPost(id);
         if (existing) {
-            console.log(`[RCNS_DO] Post ${id} already exists, skipping.`);
+            console.log(`[RCNS_DO] Post ${id} hit SQL check, skipping.`);
+            this.addToIdCache(id);
             return;
         }
 
@@ -326,7 +374,9 @@ export class RCNS_DO extends DurableObject<Env> {
             let jsonStr = '';
             if (mediaBuffer) {
                 console.log('Analyzing image with Gemini...');
-                jsonStr = await this.gemini.analyzeImage(mediaBuffer);
+                // Detect recap or event
+                const isRecap = text.toLowerCase().includes('missed') || text.toLowerCase().includes('recap');
+                jsonStr = await this.gemini.analyzeImage(mediaBuffer, "image/jpeg", !isRecap);
             } else if (text) {
                 console.log('Analyzing text with Gemini...');
                 jsonStr = await this.gemini.analyzeText(text);
@@ -366,6 +416,7 @@ export class RCNS_DO extends DurableObject<Env> {
 
         // Save to FactStore (initial pending state)
         await this.store.savePost(post);
+        this.addToIdCache(post.id);
         console.log(`Saved pending post ${post.id} to FactStore with analysis.`);
 
         if (analysis?.type === 'calendar') {
@@ -376,6 +427,14 @@ export class RCNS_DO extends DurableObject<Env> {
             post.published_at = Date.now();
             await this.store.savePost(post);
             console.log(`Published calendar thread for post ${post.id}.`);
+        } else if (analysis?.type === 'recap') {
+            await this.publishRecapThread(post, analysis, mediaBuffer);
+
+            // Update status to posted
+            post.status = 'posted';
+            post.published_at = Date.now();
+            await this.store.savePost(post);
+            console.log(`Published recap thread for post ${post.id}.`);
         } else {
             console.log(`Saved post ${post.id} to FactStore with analysis. Status: pending for 6 AM thread.`);
         }
@@ -496,6 +555,64 @@ export class RCNS_DO extends DurableObject<Env> {
         }
     }
 
+    async publishRecapThread(post: PostItem, analysis: any, mediaBuffer: Uint8Array | null) {
+        const clubName = analysis.clubName || 'Nairobi South';
+        const topic = analysis.topic || 'Event';
+        const header = `Here is what you missed at the Rotary Club of ${clubName} during our session on '${topic}':`;
+
+        // Post Main Tweet with Media
+        const mainTweetId = await this.twitter.publish({ ...post, generated_tweet: header }, mediaBuffer, undefined);
+        this.logger.log('RCNS_DO', `Recap thread started: ${mainTweetId}`);
+
+        let lastTweetId = mainTweetId;
+
+        // Post Highlights
+        if (analysis.highlights && Array.isArray(analysis.highlights)) {
+            for (const highlight of analysis.highlights) {
+                try {
+                    lastTweetId = await this.twitter.postText(`✨ ${highlight}`, lastTweetId);
+                } catch (e: any) {
+                    this.logger.error('RCNS_DO', `Failed to reply in recap thread`, e);
+                }
+            }
+        }
+
+        // Post Summary
+        if (analysis.summary) {
+            try {
+                await this.twitter.postText(`${analysis.summary}\n\nService Above Self.`, lastTweetId);
+            } catch (e: any) {
+                this.logger.error('RCNS_DO', `Failed to post summary for recap thread`, e);
+            }
+        }
+
+        return mainTweetId;
+    }
+
+    async checkBirthdays(now: Date) {
+        const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+        const dd = now.getDate().toString().padStart(2, '0');
+        const mmDd = `${mm}-${dd}`;
+        const currentYear = now.getFullYear();
+
+        console.log(`[RCNS_DO] Searching for birthdays on ${mmDd}`);
+        const birthdays = await this.store.getBirthdaysForDate(mmDd);
+
+        for (const person of birthdays) {
+            if (person.last_celebrated_year < currentYear) {
+                console.log(`[RCNS_DO] Celebrating birthday for ${person.name}`);
+                try {
+                    const tweetText = await this.gemini.generateBirthdayTweet(person.name);
+                    await this.twitter.postText(tweetText);
+                    await this.store.markBirthdayCelebrated(person.id, currentYear);
+                    this.logger.log('RCNS_DO', `Birthday tweet posted for ${person.name}`);
+                } catch (e) {
+                    this.logger.error('RCNS_DO', `Failed to celebrate birthday for ${person.name}`, e);
+                }
+            }
+        }
+    }
+
     private getOrdinal(d: number) {
         if (d > 3 && d < 21) return 'th';
         switch (d % 10) {
@@ -503,6 +620,14 @@ export class RCNS_DO extends DurableObject<Env> {
             case 2: return "nd";
             case 3: return "rd";
             default: return "th";
+        }
+    }
+
+    private addToIdCache(id: string) {
+        this.processedIds.add(id);
+        if (this.processedIds.size > 100) {
+            const firstId = this.processedIds.values().next().value;
+            if (firstId) this.processedIds.delete(firstId);
         }
     }
 }

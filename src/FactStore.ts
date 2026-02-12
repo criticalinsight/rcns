@@ -34,6 +34,15 @@ export class FactStore {
             )
         `);
 
+        this.storage.sql.exec(`
+            CREATE TABLE IF NOT EXISTS member_birthdays (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                birthday TEXT NOT NULL, -- Format: MM-DD
+                last_celebrated_year INTEGER
+            )
+        `);
+
         // Migration: Add new columns if not exists
         try {
             this.storage.sql.exec('ALTER TABLE posts ADD COLUMN generated_tweet TEXT');
@@ -87,6 +96,12 @@ export class FactStore {
         return this.mapRow(row);
     }
 
+    async hasPost(id: string): Promise<boolean> {
+        const sql = `SELECT 1 FROM posts WHERE id = ? LIMIT 1`;
+        const results = this.storage.sql.exec(sql, id);
+        return !!results.next().value;
+    }
+
     async getEventsForDate(date: string): Promise<PostItem[]> {
         const sql = `SELECT * FROM posts WHERE event_date = ? AND status != 'posted'`;
         const results = this.storage.sql.exec(sql, date);
@@ -104,6 +119,25 @@ export class FactStore {
         };
     }
 
+    async addMemberBirthday(name: string, birthday: string) {
+        this.storage.sql.exec(
+            'INSERT OR REPLACE INTO member_birthdays (id, name, birthday, last_celebrated_year) VALUES (?, ?, ?, ?)',
+            crypto.randomUUID(),
+            name,
+            birthday,
+            0
+        );
+    }
+
+    async getBirthdaysForDate(mmDd: string): Promise<{ id: string; name: string; birthday: string; last_celebrated_year: number }[]> {
+        const sql = `SELECT * FROM member_birthdays WHERE birthday = ?`;
+        return this.storage.sql.exec(sql, mmDd).toArray() as any[];
+    }
+
+    async markBirthdayCelebrated(id: string, year: number) {
+        this.storage.sql.exec('UPDATE member_birthdays SET last_celebrated_year = ? WHERE id = ?', year, id);
+    }
+
     async logError(module: string, message: string, context?: any) {
         this.storage.sql.exec(
             'INSERT INTO logs (id, module, ecosystem, message, context, created_at) VALUES (?, ?, ?, ?, ?, ?)',
@@ -114,30 +148,6 @@ export class FactStore {
             context ? JSON.stringify(context) : null,
             Date.now()
         );
-    }
-
-    async getDailyMetrics(since: number): Promise<{
-        ingested: number;
-        published: number;
-        errors: number;
-        tweets: string[];
-    }> {
-        const posts = this.storage.sql.exec(
-            'SELECT generated_tweet, status FROM posts WHERE created_at >= ?',
-            since
-        ).toArray() as any[];
-
-        const logs = this.storage.sql.exec(
-            'SELECT id FROM logs WHERE created_at >= ?',
-            since
-        ).toArray() as any[];
-
-        return {
-            ingested: posts.length,
-            published: posts.filter(p => p.status === 'posted').length,
-            errors: logs.length,
-            tweets: posts.filter(p => p.generated_tweet).map(p => p.generated_tweet)
-        };
     }
 
     async listLogs(limit: number = 20): Promise<any[]> {

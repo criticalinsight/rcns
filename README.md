@@ -12,6 +12,8 @@ RCNS is a production-grade **Cloudflare Worker** designed to automate event noti
 - **Automated Threading Workflow**:
   - **Daily 6 AM Briefing**: Aggregates all events for the current day into a single narrative thread.
   - **Monthly Calendar Unroller**: Instantly unrolls monthly schedule posters into detailed multi-tweet threads.
+  - **Event Recap Threads**: Detects recap photos/messages and generates "What you missed" highlight threads.
+  - **Birthday Celebrations**: Automatically celebrates member birthdays at 8 AM Nairobi time based on the `FactStore` list.
   - **Call To Action (CTA)**: Automatically appends engagement footers to all threads.
 - **Daily Analytics & Reply Tracking**:
   - **Nairobi Midnight Summaries**: Aggregates 24-hour performance data at 00:00 Nairobi Time (UTC+3).

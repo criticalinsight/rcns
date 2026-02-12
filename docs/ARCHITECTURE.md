@@ -18,7 +18,8 @@ A robust SQL database running within the Durable Object using native **Durable O
 * **Schema**:
   * `posts`: Tracks event flyers, processing status, and deduplication hashes.
   * `logs`: Structured error and activity logging.
-* **Analytics Engine**: Provides helper methods for aggregating 24h performance metrics (ingested messages, published tweets, errors).
+  * `member_birthdays`: Store for club member names and birthdays for automated celebrations.
+* **Optimization (In-Memory Caching)**: To minimize SQL row reads, the system caches `lastUpdateId` and other DO state variables in memory. It also maintains a 100-item LRU cache of recently processed message IDs.
 
 ### 3. Collectors & Publishers
 
@@ -33,14 +34,27 @@ Modular interfaces for external platforms.
 1. **State Management**: `lastProcessedId` and `lastReportDay` are stored in standard DO key-value storage (`this.ctx.storage`).
 2. **Heartbeat**: The `RCNS_DO` maintains an internal **Durable Object Alarm**. Every 5 minutes, the `alarm()` method is triggered, which executes the work and reschedules itself.
 3. **Ingest**: Messages are fetched, and media is downloaded.
-4. **Analyze**: Gemini Vision extracts details (Speaker, Date, Venue, `is_upcoming`).
-5. **Publishing Strategy**:
+4. **Efficient Deduplication**: Before processing, IDs are checked against an in-memory `Set`. If not found, a lightweight `SELECT 1` (via `hasPost`) is performed instead of a full row read.
+5. **Analyze**: Gemini Vision extracts details (Speaker, Date, Venue, `is_upcoming`).
+6. **Publishing Strategy**:
     * **Daily Event Thread**: At 6:00 AM Nairobi time, all 'pending' events for the current day are collected and published as a single storytelling thread.
     * **Monthly Calendar Unroller**: Images identified as 'calendar' are processed **immediately**. The system creates a thread: the main tweet features the poster, followed by individual text-only replies for each event.
+    * **Event Recap Threads**: Detects recap photos/messages and generates "What you missed" highlight threads with automated summary analysis.
+    * **Birthday Automation**: At 8:00 AM Nairobi time, the system checks for any member birthdays and posts a celebratory tweet if not already celebrated that year.
     * **Engagement**: Every thread ends with a standardized WhatsApp CTA tweet.
-6. **Reporting & Monitoring**:
+7. **Reporting & Monitoring**:
     * **Detailed Daily Report**: Sent at Nairobi Midnight (UTC+3) to Telegram.
     * **Reply Tracking**: The report now queries Twitter for recent mentions and includes both the link and a text preview of user replies directly in the Telegram summary.
+
+## Debug & Admin APIs
+
+The Durable Object exposes internal endpoints for maintenance and verification:
+
+* `/test-tweet`: Sends a standard "System Test" tweet.
+* `/test-thread`: Triggers a mock multi-tweet "Recap" thread.
+* `/add-member?name=NAME&birthday=MM-DD`: Manually adds a member to the birthday registry.
+* `/debug-posts`: Dumps recent entries from the `posts` table.
+* `/debug-logs`: Dumps the latest system logs.
 
 ## Development
 

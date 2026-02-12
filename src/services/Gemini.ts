@@ -46,17 +46,42 @@ export class GeminiService {
     async generateTweetFromAnalysis(analysis: any): Promise<string> {
         try {
             const model = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-            const prompt = PROMPTS.TWEET_GENERATION
-                .replace("{{summary}}", analysis.summary || analysis.topic || "an interesting event")
-                .replace("{{date}}", analysis.date || "soon")
-                .replace("{{location}}", analysis.location || analysis.venue || "TBD")
-                .replace("{{entities}}", analysis.entities?.join(', ') || analysis.speaker || 'None');
+            
+            let prompt = "";
+            if (analysis.type === 'recap') {
+                prompt = `Create an engaging "Recap" tweet based on these highlights:
+                Club: ${analysis.clubName}
+                Topic: ${analysis.topic}
+                Highlights: ${analysis.highlights?.join(', ')}
+                Summary: ${analysis.summary}
+                
+                Style: @rotarynairobis (No emojis, no hashtags, professional).
+                Format: "Here is what you missed at the Rotary Club of ${analysis.clubName} during our session on '${analysis.topic}': [highlights summary]. Service Above Self."`;
+            } else {
+                prompt = PROMPTS.TWEET_GENERATION
+                    .replace("{{summary}}", analysis.summary || analysis.topic || "an interesting event")
+                    .replace("{{date}}", analysis.date || "soon")
+                    .replace("{{location}}", analysis.location || analysis.venue || "TBD")
+                    .replace("{{entities}}", analysis.entities?.join(', ') || analysis.speaker || 'None');
+            }
 
             const result = await model.generateContent(prompt);
             return result.response.text();
         } catch (e: any) {
             console.error("Gemini Tweet Generation Failed:", e);
             throw new Error(`Gemini Tweet Error: ${e.message}`);
+        }
+    }
+
+    async generateBirthdayTweet(name: string): Promise<string> {
+        try {
+            const model = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+            const prompt = PROMPTS.BIRTHDAY_CELEBRATION.replace("{{name}}", name);
+            const result = await model.generateContent(prompt);
+            return result.response.text();
+        } catch (e: any) {
+            console.error("Gemini Birthday Tweet Failed:", e);
+            throw new Error(`Gemini Birthday Error: ${e.message}`);
         }
     }
 

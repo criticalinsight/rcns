@@ -8,15 +8,16 @@ Vision: To create a fully autonomous social media engine for Rotary Clubs, start
 - [x] **Gemini 2.5 Flash Integration**: Multi-modal analysis of flyers and text.
 - [x] **Daily Storyteller Threads**: Aggregating daily events at 6:00 AM.
 - [x] **Monthly Calendar Unroller**: Instant thread generation for monthly posters.
+- [x] **Lightweight Architecture**: Optimized SQL row reads via in-memory caching and pruned logging.
 - [x] **Reply Monitoring**: Daily report includes user interactions and snippets.
 - [x] **WhatsApp CTA**: Standard engagement footer for all threads.
 
-## 🚀 Phase 2: Engagement & Celebration (Next)
+## 🚀 Phase 2: Engagement & Celebration (Current)
 
-- [ ] **Event Recap Threads**:
+- [x] **Event Recap Threads**:
   - Automatically detect "recap" images or text in Telegram.
   - Generate "Here's what you missed..." threads with highlights.
-- [ ] **Birthday Automation**:
+- [x] **Birthday Automation**:
   - Manage a list of member birthdays in `FactStore`.
   - Automatically post celebratory threads/posts on their special day.
 - [ ] **Enhanced CRM**:
